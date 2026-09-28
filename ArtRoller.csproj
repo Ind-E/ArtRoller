@@ -1,0 +1,98 @@
+<Project Sdk="Godot.NET.Sdk/4.5.1">
+    <Import Project=".\Sts2PathDiscovery.props"/>
+
+    <PropertyGroup>
+        <TargetFramework>net9.0</TargetFramework>
+        <ImplicitUsings>true</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <AppOutputBase>$(MSBuildProjectDirectory)\</AppOutputBase>
+        <PathMap>$(AppOutputBase)=.\</PathMap>
+        <LangVersion>Latest</LangVersion>
+        <DefaultItemExcludes>packages/**</DefaultItemExcludes>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <NoWarn>$(NoWarn);CS1591</NoWarn>
+    </PropertyGroup>
+
+    <ItemGroup Condition="Exists('$(Sts2DataDir)')">
+        <Reference Include="0Harmony">
+            <HintPath>$(Sts2DataDir)/0Harmony.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
+        <Reference Include="sts2">
+            <HintPath>$(Sts2DataDir)/sts2.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
+    </ItemGroup>
+
+    <ItemGroup Condition="!Exists('$(Sts2DataDir)')">
+        <PackageReference Include="Book.StS2.RefLib" Version="*-*" PrivateAssets="all"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Alchyr.Sts2.BaseLib" Version="*" PrivateAssets="All" GeneratePathProperty="true" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Compile Remove="ArtRoller/**"/>
+        <EmbeddedResource Remove="ArtRoller/**"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Condition="Exists('Directory.Build.props')" Include="Directory.Build.props"/>
+        <None Include=".gitignore"/>
+        <None Include="ArtRoller.json"/>
+        <None Include="project.godot"/>
+        <None Include="ArtRoller/**"/>
+    </ItemGroup>
+
+    <Target Name="CheckSts2DataDirForCopy" BeforeTargets="CopyToModsFolderOnBuild"
+            Condition="!Exists('$(Sts2DataDir)') And !Exists('$(ModsPath)')">
+        <Error Text="Cannot copy build output to mods folder: neither '$(Sts2DataDir)' nor '$(ModsPath)' exists. Install STS2 locally or pass /p:ModsPath=... in CI."/>
+    </Target>
+
+    <Target Name="UpdateBaselibVersionInManifest" BeforeTargets="BeforeBuild" Condition="Exists('$(ProjectAssetsFile)')">
+        <PropertyGroup>
+            <ManifestPath>$(MSBuildProjectDirectory)\$(MSBuildProjectName).json</ManifestPath>
+        </PropertyGroup>
+
+        <PropertyGroup Condition="Exists('$(ManifestPath)')">
+            <NuGetData>$([System.IO.File]::ReadAllText('$(ProjectAssetsFile)'))</NuGetData>
+            <ActiveBaseLibVersion>$([System.Text.RegularExpressions.Regex]::Match($(NuGetData), '"Alchyr.Sts2.BaseLib\/([^"]*)').Result('$1'))</ActiveBaseLibVersion>
+            <OldContent>$([System.IO.File]::ReadAllText($(ManifestPath)))</OldContent>
+            <NewContent Condition="'$(ActiveBaseLibVersion)' != ''">$([System.Text.RegularExpressions.Regex]::Replace($(OldContent), '("id"\s*:\s*"BaseLib",\s*"min_version"\s*:\s*")[^"]*', '${1}$(ActiveBaseLibVersion)'))</NewContent>
+        </PropertyGroup>
+
+        <WriteLinesToFile
+                Condition="'$(ActiveBaseLibVersion)' != '' and '$(OldContent)' != '$(NewContent)'"
+                File="$(ManifestPath)"
+                Lines="$(NewContent)"
+                Overwrite="true"
+                Encoding="UTF-8" />
+
+        <Message Condition="'$(ActiveBaseLibVersion)' != '' and '$(OldContent)' != '$(NewContent)'"
+                 Text="Updated BaseLib dependency in manifest to version $(ActiveBaseLibVersion)"
+                 Importance="high" />
+    </Target>
+
+    <Target Name="CopyToModsFolderOnBuild" AfterTargets="PostBuildEvent"
+        Condition="'$(IsInnerGodotExport)' != 'true'">
+        <Message Text="Copying .dll .pdb .xml and .json to mods folder." Importance="high" />
+        <Copy SourceFiles="$(TargetPath)" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
+        <Copy SourceFiles="$(AssemblyName).json" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
+        <Copy SourceFiles="$(TargetDir)$(TargetName).pdb" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
+        <Copy SourceFiles="$(TargetDir)$(TargetName).xml" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
+    </Target>
+
+    <Target Name="NeedGodotForPublish" BeforeTargets="Publish">
+        <Error Text=" Godot path must be set up before publishing; Godot not found at path '$(GodotPath)'. Check Directory.Build.props file."
+               Condition="'$(GodotPath)' == '' or !Exists('$(GodotPath)')"/>
+    </Target>
+
+    <Target Name="GodotPublish" AfterTargets="Publish" Condition="'$(GodotPath)' != '' and Exists('$(GodotPath)') and '$(IsInnerGodotExport)' != 'true'">
+        <Message Text="Exporting Godot .pck to mods folder" Importance="high"/>
+        <Exec Command="&quot;$(GodotPath)&quot; --headless --export-pack &quot;BasicExport&quot; &quot;$(TargetDir)$(MSBuildProjectName).pck&quot;"
+            EnvironmentVariables="IsInnerGodotExport=true;MSBUILDDISABLENODEREUSE=1"
+        ContinueOnError="WarnAndContinue"/>
+        <Copy SourceFiles="$(TargetDir)$(MSBuildProjectName).pck" DestinationFolder="$(ModsPath)$(MSBuildProjectName)/" />
+    </Target>
+</Project>
