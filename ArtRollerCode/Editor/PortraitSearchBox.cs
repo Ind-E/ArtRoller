@@ -11,13 +11,20 @@ public class PortraitSearchBox
     private readonly LineEdit _searchBox;
     private readonly ItemList _searchList;
     private readonly List<string> _portraits;
+    /// <summary>What the box showed before the current search, restored when the search is cancelled.</summary>
+    private string _committedText = "";
 
     public event Action<string>? PortraitSelected;
 
     public string Text
     {
         get => _searchBox.Text;
-        set => _searchBox.Text = value;
+        set
+        {
+            _committedText = value;
+            _searchBox.Text = value;
+            _searchList.Hide();
+        }
     }
 
     public PortraitSearchBox(Godot.Node parent)
@@ -43,6 +50,7 @@ public class PortraitSearchBox
         _searchList.AddThemeStyleboxOverride("panel", bgStyle);
 
         _searchBox.AddChild(_searchList);
+        _searchBox.AddChild(new SearchDismissWatcher(_searchList, _searchBox, Cancel));
 
         Log.Info($"[PortraitSearchBox] Loaded {_portraits.Count} portrait paths.");
     }
@@ -90,10 +98,16 @@ public class PortraitSearchBox
 
         string name = System.IO.Path.GetFileNameWithoutExtension(selectedPath);
         string folder = System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(selectedPath)) ?? "";
-        _searchBox.Text = string.IsNullOrEmpty(folder) ? name : $"{folder}/{name}";
-
-        _searchList.Hide();
+        Text = string.IsNullOrEmpty(folder) ? name : $"{folder}/{name}";
         PortraitSelected?.Invoke(selectedPath);
+    }
+
+    /// <summary>Closes the results and puts the box back to how it was, leaving the art unchanged.</summary>
+    private void Cancel()
+    {
+        _searchList.Hide();
+        _searchBox.Text = _committedText;
+        _searchBox.ReleaseFocus();
     }
 
     /// <summary>

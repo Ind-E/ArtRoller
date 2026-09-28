@@ -15,6 +15,8 @@ public partial class MainFile : Node
 
     public static void Initialize()
     {
+        // Registers this mod's Node subclasses with Godot, so their overrides such as _Input run.
+        Godot.Bridge.ScriptManagerBridge.LookupScriptsInAssembly(typeof(MainFile).Assembly);
         CardArtRoller.LoadUserRolls();
         new Harmony(ModId).PatchAll();
         ModConfigRegistry.Register(ModId, new ArtRollerConfig());

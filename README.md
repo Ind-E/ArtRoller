@@ -85,14 +85,13 @@ For mod authors making recolours to ship with their mod. It has everything in Pe
    "dependencies": [{"id": "BaseLib", "min_version": "3.4.7"}, {"id": "ArtRoller", "min_version": "1.0.0"}]
    ```
 
-2. Reference `ArtRoller.dll` from your `.csproj` without copying it into your build:
+2. Reference Art Roller from your `.csproj` through NuGet, the same way as BaseLib:
 
    ```xml
-   <Reference Include="ArtRoller">
-       <HintPath>$(ModsPath)ArtRoller/ArtRoller.dll</HintPath>
-       <Private>false</Private>
-   </Reference>
+   <PackageReference Include="Shadowfall.Sts2.ArtRoller" Version="1.0.0" PrivateAssets="All" ExcludeAssets="runtime" />
    ```
+
+   `ExcludeAssets="runtime"` keeps `ArtRoller.dll` out of your build; players get it from the Art Roller mod. The package works wherever you and your collaborators installed Art Roller, mods folder or Workshop, and updates like any other package.
 
    You need this only if your code calls Art Roller, such as registering your own folders in step 3. A mod that keeps its recolours in the default folder can skip it.
 
@@ -135,7 +134,7 @@ We are aware of a handful of mods that copied the Art Roller code out of Into th
    Delete the copied `color_adjust.gdshader` too.
 2. Remove the `CardArtRoller.RegisterAllFromDirectory(...)` call from your mod initializer.
 3. Leave your `.hsv` files where they are. If they are in `res://{YourModId}/ArtRoller/`, nothing else is needed. If not, register the folder as in [Setting up your mod](#setting-up-your-mod).
-4. Follow [Setting up your mod](#setting-up-your-mod): add the dependency, and the DLL reference if your code calls Art Roller.
+4. Follow [Setting up your mod](#setting-up-your-mod): add the dependency, and the NuGet package reference if your code calls Art Roller.
 5. If your own code called the copied classes, point it at `ArtRoller.CardArtRoller`. The save methods now take a whole recolour instead of a list of numbers: `SaveHsvForCard(key, data)` and `SaveDefaultHsvForCard(key, data)`.
 
 Your existing recolours keep working unchanged. Every setting a file leaves out counts as unchanged.

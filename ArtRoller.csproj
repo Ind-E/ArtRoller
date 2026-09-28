@@ -13,6 +13,24 @@
         <NoWarn>$(NoWarn);CS1591</NoWarn>
     </PropertyGroup>
 
+    <!-- NuGet package, so mods can compile against Art Roller wherever players install it. The
+         version here is the mod's version too: the build writes it into ArtRoller.json. -->
+    <PropertyGroup>
+        <Version>1.0.0</Version>
+        <IsPackable>true</IsPackable>
+        <PackageId>Shadowfall.Sts2.ArtRoller</PackageId>
+        <Title>Art Roller</Title>
+        <Authors>Shadowfall Team</Authors>
+        <Description>Shared card art recolouring for Slay the Spire 2 mods. Reference with ExcludeAssets="runtime": players get ArtRoller.dll from the Art Roller mod itself.</Description>
+        <PackageTags>slay-the-spire-2;sts2;mod</PackageTags>
+        <RepositoryUrl>https://github.com/mikemayhemdev/ArtRoller</RepositoryUrl>
+        <PackageProjectUrl>https://github.com/mikemayhemdev/ArtRoller</PackageProjectUrl>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+        <NoWarn>$(NoWarn);NU5128</NoWarn>
+    </PropertyGroup>
+
     <ItemGroup Condition="Exists('$(Sts2DataDir)')">
         <Reference Include="0Harmony">
             <HintPath>$(Sts2DataDir)/0Harmony.dll</HintPath>
@@ -43,7 +61,23 @@
         <None Include="ArtRoller.json"/>
         <None Include="project.godot"/>
         <None Include="ArtRoller/**"/>
+        <None Include="README.md" Pack="true" PackagePath="/"/>
     </ItemGroup>
+
+    <Target Name="UpdateManifestVersion" BeforeTargets="BeforeBuild">
+        <PropertyGroup>
+            <ManifestPath>$(MSBuildProjectDirectory)\$(MSBuildProjectName).json</ManifestPath>
+            <OldManifest>$([System.IO.File]::ReadAllText($(ManifestPath)))</OldManifest>
+            <NewManifest>$([System.Text.RegularExpressions.Regex]::Replace($(OldManifest), '("version"\s*:\s*")[^"]*', '${1}v$(Version)'))</NewManifest>
+        </PropertyGroup>
+
+        <WriteLinesToFile
+                Condition="'$(OldManifest)' != '$(NewManifest)'"
+                File="$(ManifestPath)"
+                Lines="$(NewManifest)"
+                Overwrite="true"
+                Encoding="UTF-8" />
+    </Target>
 
     <Target Name="CheckSts2DataDirForCopy" BeforeTargets="CopyToModsFolderOnBuild"
             Condition="!Exists('$(Sts2DataDir)') And !Exists('$(ModsPath)')">
