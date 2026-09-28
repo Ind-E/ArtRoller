@@ -10,7 +10,6 @@ public class PortraitSearchBox
 {
     private readonly LineEdit _searchBox;
     private readonly ItemList _searchList;
-    private readonly List<string> _portraits;
     /// <summary>What the box showed before the current search, restored when the search is cancelled.</summary>
     private string _committedText = "";
 
@@ -29,8 +28,6 @@ public class PortraitSearchBox
 
     public PortraitSearchBox(Godot.Node parent)
     {
-        _portraits = LoadAllPortraitPaths();
-
         _searchBox = new LineEdit();
         _searchBox.PlaceholderText = "Search portrait paths...";
         EditorHoverTip.Attach(_searchBox, "PORTRAIT");
@@ -52,7 +49,16 @@ public class PortraitSearchBox
         _searchBox.AddChild(_searchList);
         _searchBox.AddChild(new SearchDismissWatcher(_searchList, _searchBox, Cancel));
 
-        Log.Info($"[PortraitSearchBox] Loaded {_portraits.Count} portrait paths.");
+        // A search typed while the list is still building shows a placeholder; redo it once ready.
+        Preload();
+        if (!_portraits!.IsCompleted)
+            _portraits.ContinueWith(_ => Callable.From(OnPortraitsReady).CallDeferred());
+    }
+
+    private void OnPortraitsReady()
+    {
+        if (GodotObject.IsInstanceValid(_searchBox) && _searchList.Visible)
+            OnSearchTextChanged(_searchBox.Text);
     }
 
     private void OnSearchTextChanged(string searchText)
@@ -65,8 +71,15 @@ public class PortraitSearchBox
             return;
         }
 
+        if (!_portraits!.IsCompletedSuccessfully)
+        {
+            _searchList.AddItem("Loading portraits...", selectable: false);
+            ShowResults();
+            return;
+        }
+
         int count = 0;
-        foreach (string path in _portraits)
+        foreach (string path in _portraits.Result)
         {
             string display = BuildDisplayName(path);
             
@@ -80,16 +93,17 @@ public class PortraitSearchBox
         }
 
         if (count > 0)
-        {
-            Vector2 globalPos = _searchBox.GlobalPosition;
-            _searchList.GlobalPosition = new Vector2(globalPos.X, globalPos.Y - 250);
-            _searchList.Size = new Vector2(_searchBox.Size.X, 250);
-            _searchList.Show();
-        }
+            ShowResults();
         else
-        {
             _searchList.Hide();
-        }
+    }
+
+    private void ShowResults()
+    {
+        Vector2 globalPos = _searchBox.GlobalPosition;
+        _searchList.GlobalPosition = new Vector2(globalPos.X, globalPos.Y - 250);
+        _searchList.Size = new Vector2(_searchBox.Size.X, 250);
+        _searchList.Show();
     }
 
     private void OnItemSelected(long index)
@@ -128,26 +142,57 @@ public class PortraitSearchBox
         return string.IsNullOrEmpty(folder) ? name : $"{folder}/{name}";
     }
 
-    private static List<string> LoadAllPortraitPaths()
+    /// <summary>Every portrait the search offers, built once per session on a background thread.</summary>
+    private static Task<List<string>>? _portraits;
+
+    /// <summary>
+    /// Starts building the portrait list, if it has not been started. The file checks and folder
+    /// scans run in the background, since doing them when the editor first opened caused a hitch.
+    /// </summary>
+    internal static void Preload()
     {
-        var paths = new List<string>();
+        if (_portraits != null) return;
+
+        // The game's card and mod lists are not thread-safe, so read them here on the main thread.
+        var cardPaths = new List<string>();
+        List<string> roots = [];
         try
         {
+            // Each card's own art: its PortraitPath would return a roll's replacement instead,
+            // hiding the original of every card that has one.
             foreach (var card in MegaCrit.Sts2.Core.Models.ModelDb.AllCards)
+                cardPaths.Add(CardModelPortraitPatch.OriginalPortraitPath(card));
+            roots = CardArtRoller.GetPortraitDirectories().ToList();
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"[PortraitSearchBox] Failed to list card portraits: {ex.Message}");
+        }
+
+        _portraits = Task.Run(() => LoadAllPortraitPaths(cardPaths, roots));
+    }
+
+    private static List<string> LoadAllPortraitPaths(List<string> cardPaths, List<string> roots)
+    {
+        var paths = new List<string>();
+        var seen = new HashSet<string>();
+        try
+        {
+            foreach (string path in cardPaths)
             {
-                // The card's own art: its PortraitPath would return a roll's replacement instead,
-                // hiding the original of every card that has one.
-                string path = CardModelPortraitPatch.OriginalPortraitPath(card);
-                if (!string.IsNullOrWhiteSpace(path) && !paths.Contains(path) && ResourceLoader.Exists(path))
+                if (!string.IsNullOrWhiteSpace(path) && !seen.Contains(path) && ResourceLoader.Exists(path))
+                {
+                    seen.Add(path);
                     paths.Add(path);
+                }
             }
 
-            // The loop above only finds art some card uses, so also scan the mods' portrait folders
-            // for art whose card was removed or has not been assigned yet.
+            // Card art only covers art some card uses, so also scan the mods' portrait folders for
+            // art whose card was removed or has not been assigned yet.
             int beforeCustom = paths.Count;
-            foreach (var root in CardArtRoller.GetPortraitDirectories())
-                AddPortraitsUnder(root, paths);
-            Log.Info($"[PortraitSearchBox] {paths.Count - beforeCustom} custom portrait(s) added from disk.");
+            foreach (var root in roots)
+                AddPortraitsUnder(root, paths, seen);
+            Log.Info($"[PortraitSearchBox] Loaded {paths.Count} portrait paths, {paths.Count - beforeCustom} of them from mod folders.");
         }
         catch (Exception ex)
         {
@@ -161,7 +206,7 @@ public class PortraitSearchBox
     /// Only the big variant is collected: it is what a card actually renders, and including the
     /// small siblings would fill the picker with same-named duplicates at the wrong resolution.
     /// </summary>
-    private static void AddPortraitsUnder(string directory, List<string> paths)
+    private static void AddPortraitsUnder(string directory, List<string> paths, HashSet<string> seen)
     {
         using var dir = DirAccess.Open(directory);
         if (dir == null) return;
@@ -177,7 +222,7 @@ public class PortraitSearchBox
 
             if (dir.CurrentIsDir())
             {
-                AddPortraitsUnder(full, paths);
+                AddPortraitsUnder(full, paths, seen);
                 continue;
             }
 
@@ -191,9 +236,10 @@ public class PortraitSearchBox
 
             if (!full.EndsWith(".png", StringComparison.OrdinalIgnoreCase)) continue;
             if (!full.Contains("/big/", StringComparison.OrdinalIgnoreCase)) continue;
-            if (paths.Contains(full)) continue;
+            if (seen.Contains(full)) continue;
             if (!ResourceLoader.Exists(full)) continue;
 
+            seen.Add(full);
             paths.Add(full);
         }
         dir.ListDirEnd();

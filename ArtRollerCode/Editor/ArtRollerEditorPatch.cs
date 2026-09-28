@@ -477,6 +477,14 @@ public class ArtRollerEditorPatch
     /// the deck and other views, which should never grow an editor. A prefix, because the library
     /// opens the screen from inside this method.
     /// </summary>
+    /// <summary>Builds the portrait search list while the player browses, before any card is opened.</summary>
+    [HarmonyPatch(nameof(NCardLibrary._Ready))]
+    [HarmonyPostfix]
+    static void PreloadPortraits()
+    {
+        if (ArtRollerConfig.EditorEnabled) PortraitSearchBox.Preload();
+    }
+
     [HarmonyPatch("ShowCardDetail")]
     [HarmonyPrefix]
     // ReSharper disable once UnusedMember.Local

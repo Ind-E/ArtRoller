@@ -27,9 +27,11 @@ internal static class LegacyCopies
 
     internal static void Discover()
     {
-        var loaded = ModManager.GetLoadedMods().ToList();
-        if (loaded.Count == _loadedModCount) return;
-        _loadedModCount = loaded.Count;
+        // Runs on every roll lookup, so the unchanged case only counts.
+        int count = ModManager.GetLoadedMods().Count();
+        if (count == _loadedModCount) return;
+        _loadedModCount = count;
+        CardArtRoller.ClearDefaultsCache();
 
         if (!_legacyUserSavesLoaded)
         {
@@ -37,7 +39,7 @@ internal static class LegacyCopies
             CardArtRoller.LoadRollsFrom(ProjectSettings.GlobalizePath(LegacyUserSaveDirectory), UserRolls);
         }
 
-        foreach (var mod in loaded)
+        foreach (var mod in ModManager.GetLoadedMods())
         {
             string? id = mod.manifest?.id;
             if (id == null || id == MainFile.ModId || !SeenMods.Add(id)) continue;

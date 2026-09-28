@@ -8,9 +8,13 @@ public static class CardShaderHelper
 
     private static readonly CardHsvData Neutral = new();
 
-    public static ShaderMaterial CreateMaterial(CardHsvData? data)
+    public static ShaderMaterial? CreateMaterial(CardHsvData? data)
     {
-        var shader = (Shader)GD.Load<Shader>(ShaderPath).Duplicate();
+        // Missing when ArtRoller.pck is: leave cards unrecoloured rather than throw inside NCard.Reload,
+        // which breaks the game's own card screens.
+        if (GD.Load<Shader>(ShaderPath) is not { } source) return null;
+
+        var shader = (Shader)source.Duplicate();
         var mat = new ShaderMaterial();
         mat.Shader = shader;
         SetParameters(mat, data ?? Neutral);

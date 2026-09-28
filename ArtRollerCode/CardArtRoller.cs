@@ -24,7 +24,16 @@ public static class CardArtRoller
     /// Where "Save Default" writes, so a mod author can point it straight at their repo's packed
     /// rolls folder. Empty means <see cref="SaveDirectory"/>/defaults.
     /// </summary>
-    public static string DefaultsOutputDirectory { get; set; } = "";
+    public static string DefaultsOutputDirectory
+    {
+        get => _defaultsOutputDirectory;
+        set
+        {
+            _defaultsOutputDirectory = value;
+            ClearDefaultsCache();
+        }
+    }
+    private static string _defaultsOutputDirectory = "";
 
     private const string ConfigFileName = "card_art_roller_config.cfg";
 
@@ -32,12 +41,24 @@ public static class CardArtRoller
     private static readonly List<string> PortraitDirectories = [];
 
     /// <summary>
+    /// Every default looked up so far, misses included as null. Lookups run each time a card is
+    /// drawn or its portrait path is read, far too often to go to disk.
+    /// </summary>
+    private static readonly Dictionary<string, CardHsvData?> DefaultsCache = new();
+
+    /// <summary>
     /// Adds a <c>res://</c> folder of <c>{key}.hsv</c> rolls. Registered folders are searched in
     /// order, before the ones found automatically, and the first match wins. The export preset's
     /// include_filter needs <c>*.hsv</c>, or Godot leaves the files out of the <c>.pck</c>.
     /// </summary>
-    public static void RegisterDefaultsDirectory(string resDirectory) =>
+    public static void RegisterDefaultsDirectory(string resDirectory)
+    {
         AddUnique(DefaultsDirectories, resDirectory);
+        ClearDefaultsCache();
+    }
+
+    /// <summary>Forgets every cached default, for when the folders they come from change.</summary>
+    internal static void ClearDefaultsCache() => DefaultsCache.Clear();
 
     /// <summary>Adds a <c>res://</c> folder the portrait picker searches recursively for <c>big/*.png</c>.</summary>
     public static void RegisterPortraitDirectory(string resDirectory) =>
@@ -132,7 +153,21 @@ public static class CardArtRoller
     private static CardHsvData? GetPersonalRoll(string key) =>
         ArtRollerConfig.ApplyPersonalEdits ? GetCardData(key) : null;
 
+    /// <summary>
+    /// The default shipped for <paramref name="cardId"/>, or null. The result is cached and shared
+    /// between callers, so copy it with <c>with { }</c> before changing it.
+    /// </summary>
     public static CardHsvData? GetDefaultHsvForCard(string cardId)
+    {
+        LegacyCopies.Discover();
+        if (DefaultsCache.TryGetValue(cardId, out var cached)) return cached;
+
+        var data = LoadDefault(cardId);
+        DefaultsCache[cardId] = data;
+        return data;
+    }
+
+    private static CardHsvData? LoadDefault(string cardId)
     {
         // Save Default's output folder comes first, so a freshly saved default shows without a rebuild.
         string outputPath = GetDefaultOutputPath(cardId);
@@ -198,8 +233,11 @@ public static class CardArtRoller
         }
     }
 
-    public static void SaveDefaultHsvForCard(string cardId, CardHsvData data) =>
+    public static void SaveDefaultHsvForCard(string cardId, CardHsvData data)
+    {
         SaveToFile(Normalize(cardId, data), GetDefaultOutputPath(cardId));
+        DefaultsCache.Remove(cardId);
+    }
 
     private static CardHsvData Normalize(string cardId, CardHsvData data) => data with
     {
@@ -213,6 +251,7 @@ public static class CardArtRoller
     /// </summary>
     public static void DeleteDefaultHsvForCard(string cardId)
     {
+        DefaultsCache.Remove(cardId);
         try
         {
             string path = GetDefaultOutputPath(cardId);
